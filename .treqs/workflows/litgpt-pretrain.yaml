@@ -50,7 +50,7 @@ prepare:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n prepare --wandb-to-trackio -- python reproduction/prepare_data.py --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
+    roar run -n prepare --wandb-to-trackio -- python -m reproduction.prepare_data --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
   trace: off
 
 pretrain:
