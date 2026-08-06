@@ -46,6 +46,13 @@ data:
     roar run -n data --wandb-to-trackio -- curl -fsSL --create-dirs -o data_train/wikitext2_train.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/train.txt -o data_val/wikitext2_valid.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/valid.txt
   trace: off
 
+prepare:
+  command: |
+    export PATH=/opt/pytorch/bin:$PATH
+    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
+    roar run -n prepare --wandb-to-trackio -- python reproduction/prepare_data.py --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
+  trace: off
+
 pretrain:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
