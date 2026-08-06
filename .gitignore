@@ -24,3 +24,35 @@ events.out.tfevents*
 **/custom_finetuning_dataset.json
 client.py
 **/custom_texts/
+
+# roar state — the generated setup stage runs `roar init`, which creates
+# .roar/. Without this rule the worktree goes dirty and the FIRST PAID
+# `roar run` refuses to execute ("Run blocked: untracked files").
+.roar/
+# --- reproduction outputs (scaffold_row.py: mnist rule) ---
+# file-pattern ignore + tracked .gitkeep so each dir survives a clean
+# checkout and roar keeps the outputs in lineage. NEVER dir-ignore.
+checkpoints/*
+!checkpoints/.gitkeep
+data_train/*
+!data_train/.gitkeep
+data_val/*
+!data_val/.gitkeep
+out/final/*
+!out/final/.gitkeep
+
+# --- row 009 correction to the mnist rule above ---
+# litgpt's own .gitignore already DIR-ignores `checkpoints` (L18) and `out` (L19).
+# Git cannot re-include a file whose parent DIRECTORY is excluded, so the
+# `!checkpoints/.gitkeep` / `!out/final/.gitkeep` lines above are dead: verified
+# with `git check-ignore -v`. Re-include the directories first, then re-ignore
+# their contents, so each dir survives a clean checkout and roar keeps its
+# outputs in lineage.
+!checkpoints/
+checkpoints/*
+!checkpoints/.gitkeep
+!out/
+out/*
+!out/final/
+out/final/*
+!out/final/.gitkeep

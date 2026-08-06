@@ -1,0 +1,11 @@
+[context]
+api_url = "https://api.treqs.ai"
+owner_id = "e39ab1b0-7f8a-4473-b2eb-027d6feb6e9d"
+owner_type = "organization"
+owner_username = "reproducible-ai"
+owner_display_name = "Reproducible AI"
+project_id = "f3d511eb-c357-478d-bf25-33c7fef29e5f"
+project_slug = "litgpt"
+project_name = "LitGPT pretrain"
+current_username = "christreqs"
+saved_at = "2026-08-06T19:16:30.126716Z"
