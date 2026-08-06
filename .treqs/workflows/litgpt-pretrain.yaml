@@ -5,7 +5,23 @@ name: litgpt-pretrain reproduction
 # (.gitkeep) with files gitignored; publish --no-tag. Adjust commands as needed.
 
 secrets:
-  - HF_TOKEN            # wandb->trackio sync + roar put upload
+  - HF_TOKEN            # roar put upload
+
+# NOTE (hand edit to the generated file): the scaffold puts
+# `--wandb-to-trackio` + TRACKIO_SPACE_ID on every run stage. Removed here.
+# This recipe uses litgpt's `--logger_name csv`; nothing on the reproduced path
+# imports wandb, so the shim is inapplicable. It is not merely inert: it makes
+# roar's sitecustomize attempt `import trackio` in every traced process, and the
+# attempt alone is enough for `trackio==0.33.0` (plus gradio_client) to be
+# attributed into the recorded freeze -- even though the import FAILS here
+# ("[wandb->trackio] trackio not importable; using no-op"), because trackio
+# 0.33.0 needs huggingface-hub>=1.10 while this recipe must pin
+# huggingface-hub<1.0 (see the setup stage). The result was a recorded freeze
+# that no resolver can satisfy:
+#   Because trackio==0.33.0 depends on huggingface-hub>=1.10.0 and you require
+#   huggingface-hub==0.36.2, ... your requirements are unsatisfiable.
+# so `roar reproduce --lineage --run` installed 0 of 67 packages and every step
+# died with ModuleNotFoundError -- while all four tier-1 gates stayed green.
 
 setup:
   command: |
@@ -35,29 +51,29 @@ setup:
 tokenizer:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n tokenizer --wandb-to-trackio -- python -m litgpt download EleutherAI/pythia-14m --tokenizer_only true
+    export PYTHONUNBUFFERED=1
+    roar run -n tokenizer -- python -m litgpt download EleutherAI/pythia-14m --tokenizer_only true
   trace: off
 
 data:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n data --wandb-to-trackio -- curl -fsSL --create-dirs -o data_train/wikitext2_train.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/train.txt -o data_val/wikitext2_valid.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/valid.txt
+    export PYTHONUNBUFFERED=1
+    roar run -n data -- curl -fsSL --create-dirs -o data_train/wikitext2_train.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/train.txt -o data_val/wikitext2_valid.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/valid.txt
   trace: off
 
 prepare:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n prepare --wandb-to-trackio -- python -m reproduction.prepare_data --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
+    export PYTHONUNBUFFERED=1
+    roar run -n prepare -- python -m reproduction.prepare_data --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
   trace: off
 
 pretrain:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n pretrain --wandb-to-trackio -- python -m litgpt pretrain pythia-14m --tokenizer_dir checkpoints/EleutherAI/pythia-14m --data TextFiles --data.train_data_path data_train --data.val_data_path data_val --data.num_workers 0 --out_dir out --logger_name csv --devices 1 --seed 42 --train.max_tokens 2048 --train.max_seq_length 128 --train.micro_batch_size 1 --train.global_batch_size 2 --train.lr_warmup_steps 1 --train.log_interval 1 --train.save_interval 1000 --train.max_norm 1.0 --eval.interval 1000 --eval.max_iters 2 --eval.final_validation true
+    export PYTHONUNBUFFERED=1
+    roar run -n pretrain -- python -m litgpt pretrain pythia-14m --tokenizer_dir checkpoints/EleutherAI/pythia-14m --data TextFiles --data.train_data_path data_train --data.val_data_path data_val --data.num_workers 0 --out_dir out --logger_name csv --devices 1 --seed 42 --train.max_tokens 2048 --train.max_seq_length 128 --train.micro_batch_size 1 --train.global_batch_size 2 --train.lr_warmup_steps 1 --train.log_interval 1 --train.save_interval 1000 --train.max_norm 1.0 --eval.interval 1000 --eval.max_iters 2 --eval.final_validation true
   trace: off
 
 label:
