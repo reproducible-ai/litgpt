@@ -29,13 +29,13 @@ setup:
     export PATH=/opt/pytorch/bin:$PATH
     python -m pip install --quiet requests || true
 
-    # --- roar certification build: 0.4.4.dev0 @ 4eaefc0 (adds P0-9/P0-11/P0-12) ---
-    # THREE separate builds have now reported the version string "0.4.4.dev0" and
+    # --- roar certification build: 0.4.4.dev0 @ c5c553b (adds P0-13 on top of 4eaefc0) ---
+    # FOUR separate builds have now reported the version string "0.4.4.dev0" and
     # none embeds its git SHA, so the sha256 below is the ONLY build identity.
     # Verified before install, and the six tracer artefacts are asserted present --
     # one earlier cert wheel installed cleanly, reported the right version, and
     # shipped NO tracer at all, so version alone proves nothing.
-    ROAR_WHEEL_SHA256=f06a12710342363710ac5a1a8c5f70d4b40c2c3340a2e422b4fcfe8f92bd2c97
+    ROAR_WHEEL_SHA256=a5bcde02f6a1f7bfa29ee52044f69fb72a87a1f3b6867db6911e8e82749415f0
     python -m pip uninstall -y -q roar-cli || true
     python - <<'PY'
     import glob, os, shutil, sysconfig
