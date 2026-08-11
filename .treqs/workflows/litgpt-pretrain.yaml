@@ -6,36 +6,81 @@ name: litgpt-pretrain reproduction
 
 secrets:
   - HF_TOKEN            # roar put upload
-  - ROAR_WHEEL_URL      # presigned URL for the roar cert build (see setup)
+  # ROAR_WHEEL_URL is no longer needed: this row installs a PUBLISHED roar
+  # (TestPyPI 0.4.4rc5) straight from its immutable file URL, so there is no
+  # per-target shared secret to overwrite and no presigned URL to stage.
 
-# NOTE (hand edit to the generated file): the scaffold puts
-# `--wandb-to-trackio` + TRACKIO_SPACE_ID on every run stage. Removed here.
-# This recipe uses litgpt's `--logger_name csv`; nothing on the reproduced path
-# imports wandb, so the shim is inapplicable. It is not merely inert: it makes
-# roar's sitecustomize attempt `import trackio` in every traced process, and the
-# attempt alone is enough for `trackio==0.33.0` (plus gradio_client) to be
-# attributed into the recorded freeze -- even though the import FAILS here
-# ("[wandb->trackio] trackio not importable; using no-op"), because trackio
-# 0.33.0 needs huggingface-hub>=1.10 while this recipe must pin
-# huggingface-hub<1.0 (see the setup stage). The result was a recorded freeze
-# that no resolver can satisfy:
+# ---------------------------------------------------------------------------
+# WHY THIS RECIPE STILL USES `--logger_name csv`, AND WHY THERE IS NO
+# `--wandb-to-trackio` ON ANY STAGE.
+#
+# litgpt DOES ship an experiment-logging integration and it IS switched on by a
+# flag -- `--logger_name wandb`, one of the five choices in
+# `litgpt/constants.py:7` (`csv, tensorboard, wandb, mlflow, litlogger`). So the
+# usual excuse ("upstream has no logging") does not apply here. It was tried,
+# and it cannot work, for a reason that lives in Lightning rather than litgpt.
+#
+# The bridge works by aliasing the module: roar's shim does
+# `sys.modules["wandb"] = trackio` (roar/integrations/wandb_trackio.py). Two
+# independent things in Lightning's WandbLogger defeat a module alias:
+#
+#   1. `lightning/pytorch/loggers/wandb.py:312`
+#        if not _WANDB_AVAILABLE: raise ModuleNotFoundError(...)
+#      `_WANDB_AVAILABLE = RequirementCache("wandb>=0.12.10")` reads INSTALLED
+#      DISTRIBUTION METADATA. A `sys.modules` alias provides no metadata, so
+#      with the recipe as-is WandbLogger dies in its constructor:
+#        ModuleNotFoundError: Requirement 'wandb>=0.12.10' not met.
+#
+#   2. Install the real `wandb` distribution to satisfy (1) and it dies one step
+#      later, at `lightning/pytorch/loggers/wandb.py:390`, inside the
+#      `experiment` property:
+#        import wandb
+#        from wandb.sdk.lib import RunDisabled     # <-- here
+#        from wandb.wandb_run import Run
+#      Those are SUBMODULE imports. They are resolved through the aliased
+#      package's `__path__`, which now points at trackio, so:
+#        ModuleNotFoundError: No module named 'wandb.sdk'
+#      They are unreachable: `litgpt/pretrain.py:156` calls
+#      `fabric.logger.log_hyperparams(hparams)` on the wandb path, and
+#      `WandbLogger.log_hyperparams` (wandb.py:435) touches `self.experiment`
+#      before a single training step runs. `log_metrics` does the same.
+#
+# Verified by direct execution against lightning 2.6.5 (the resolve of litgpt's
+# own `lightning>=2.6.1`), wandb 0.28.1, trackio 0.20.2, roar 0.4.4rc5 -- the
+# rc5 shim fixes `init(resume=None)`, `run.get_url()` and `log(data=, step=)`,
+# none of which is the failure here. Making it work means patching Lightning
+# (the two symbols are used only for one `isinstance` check that is already
+# `getattr`-guarded on the same line), and patching a dependency of the workload
+# forfeits the zero-upstream-lines property this row rests on. So: no link.
+#
+# There is a second, independent reason not to arm the shim on THIS row. Merely
+# setting `--wandb-to-trackio` makes roar's sitecustomize attempt `import
+# trackio` in every traced process, and that attempt alone was enough to get
+# `trackio` (plus gradio_client) attributed into the recorded freeze even when
+# the import FAILED. Modern trackio requires `huggingface-hub>=1.10`, while this
+# recipe must pin `huggingface-hub<1.0` (see setup). The resulting freeze was
+# unsatisfiable --
 #   Because trackio==0.33.0 depends on huggingface-hub>=1.10.0 and you require
 #   huggingface-hub==0.36.2, ... your requirements are unsatisfiable.
-# so `roar reproduce --lineage --run` installed 0 of 67 packages and every step
-# died with ModuleNotFoundError -- while all four tier-1 gates stayed green.
+# -- so `roar reproduce --lineage --run` installed 0 of 67 packages and every
+# step died with ModuleNotFoundError, while all four tier-1 gates stayed green.
+# ---------------------------------------------------------------------------
 
 setup:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     python -m pip install --quiet requests || true
 
-    # --- roar certification build: 0.4.4.dev0 @ c5c553b (adds P0-13 on top of 4eaefc0) ---
-    # FOUR separate builds have now reported the version string "0.4.4.dev0" and
-    # none embeds its git SHA, so the sha256 below is the ONLY build identity.
-    # Verified before install, and the six tracer artefacts are asserted present --
-    # one earlier cert wheel installed cleanly, reported the right version, and
-    # shipped NO tracer at all, so version alone proves nothing.
-    ROAR_WHEEL_SHA256=a5bcde02f6a1f7bfa29ee52044f69fb72a87a1f3b6867db6911e8e82749415f0
+    # --- roar 0.4.4rc5, PUBLISHED to TestPyPI ---
+    # Installed from the immutable TestPyPI file URL rather than a presigned S3
+    # object: the S3 keys have been overwritten in place before, and the version
+    # string alone cannot distinguish builds (four separate builds all reported
+    # "0.4.4.dev0"). The sha256 is the build identity and is verified BEFORE the
+    # install. The wheel file is installed directly -- not `--index-url
+    # test.pypi.org` -- so roar's own dependencies still resolve from real PyPI.
+    ROAR_WHEEL=roar_cli-0.4.4rc5-cp310-abi3-manylinux_2_34_x86_64.whl
+    ROAR_WHEEL_SHA256=ed35ed6bda3b5698ab65a887e7390c2ac073123f6d94bfa27b8282285352219c
+    ROAR_WHEEL_SRC=https://test-files.pythonhosted.org/packages/f0/e2/210129d82c059236902d4e3715cf7398925e72c2f646afc6e41a1a8b6bd1/$ROAR_WHEEL
     python -m pip uninstall -y -q roar-cli || true
     python - <<'PY'
     import glob, os, shutil, sysconfig
@@ -44,12 +89,12 @@ setup:
             print("purging stale roar install:", path)
             shutil.rmtree(path, ignore_errors=True)
     PY
-    curl -fsSL "$ROAR_WHEEL_URL" -o /tmp/roar_cli-0.4.4.dev0-cp310-abi3-linux_x86_64.whl
-    echo "$ROAR_WHEEL_SHA256  /tmp/roar_cli-0.4.4.dev0-cp310-abi3-linux_x86_64.whl" | sha256sum -c -
-    python -m pip install --quiet --no-cache-dir /tmp/roar_cli-0.4.4.dev0-cp310-abi3-linux_x86_64.whl
+    curl -fsSL "$ROAR_WHEEL_SRC" -o "/tmp/$ROAR_WHEEL"
+    echo "$ROAR_WHEEL_SHA256  /tmp/$ROAR_WHEEL" | sha256sum -c -
+    python -m pip install --quiet --no-cache-dir "/tmp/$ROAR_WHEEL"
     echo "roar binary in use: $(command -v roar)"
     roar --version
-    roar --version | grep -q '0\.4\.4\.dev0' || { echo "FATAL: roar is not the cert build"; exit 1; }
+    roar --version | grep -q '0\.4\.4rc5' || { echo "FATAL: roar is not 0.4.4rc5"; exit 1; }
     python - <<'PY'
     import glob, os, roar, sys
     binderr = os.path.join(os.path.dirname(roar.__file__), "bin")
@@ -96,6 +141,7 @@ tokenizer:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export PYTHONUNBUFFERED=1
+    echo "TIMING tokenizer START $(date -u +%FT%T.%NZ)"
     roar run -n tokenizer -- python -m litgpt download EleutherAI/pythia-14m --tokenizer_only true
   trace: off
 
@@ -103,6 +149,7 @@ data:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export PYTHONUNBUFFERED=1
+    echo "TIMING data START $(date -u +%FT%T.%NZ)"
     roar run -n data -- curl -fsSL --create-dirs -o data_train/wikitext2_train.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/train.txt -o data_val/wikitext2_valid.txt https://raw.githubusercontent.com/pytorch/examples/main/word_language_model/data/wikitext-2/valid.txt
   trace: off
 
@@ -110,6 +157,7 @@ prepare:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export PYTHONUNBUFFERED=1
+    echo "TIMING prepare START $(date -u +%FT%T.%NZ)"
     roar run -n prepare -- python -m reproduction.prepare_data --train_data_path data_train --val_data_path data_val --tokenizer_dir checkpoints/EleutherAI/pythia-14m --micro_batch_size 1 --max_seq_length 128
   trace: off
 
@@ -117,17 +165,20 @@ pretrain:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export PYTHONUNBUFFERED=1
+    echo "TIMING pretrain START $(date -u +%FT%T.%NZ)"
     roar run -n pretrain -- python -m litgpt pretrain pythia-14m --tokenizer_dir checkpoints/EleutherAI/pythia-14m --data TextFiles --data.train_data_path data_train --data.val_data_path data_val --data.num_workers 0 --out_dir out --logger_name csv --devices 1 --seed 42 --train.max_tokens 2048 --train.max_seq_length 128 --train.micro_batch_size 1 --train.global_batch_size 2 --train.lr_warmup_steps 1 --train.log_interval 1 --train.save_interval 1000 --train.max_norm 1.0 --eval.interval 1000 --eval.max_iters 2 --eval.final_validation true
   trace: off
 
 label:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
+    echo "TIMING label START $(date -u +%FT%T.%NZ)"
     roar label set artifact out/final/lit_model.pth model.name=litgpt-pretrain model.version=1 license.id=Apache-2.0 license.name='Apache License 2.0' description='Truncated clean-room reproduction of the Lightning-AI/litgpt pretrain path: pythia-14m pretrained for 8 optimizer steps on WikiText-2 via the TextFiles data module. NOT converged.' documentation.url=https://github.com/reproducible-ai/litgpt/blob/main/tutorials/pretrain.md
   trace: off
 
 publish:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
+    echo "TIMING publish START $(date -u +%FT%T.%NZ)"
     roar put out/final/lit_model.pth hf://reproducible-ai/litgpt --public --yes --no-tag -m "TRUNCATED reproduction: litgpt pretrain, pythia-14m, 8 optimizer steps on WikiText-2. NOT converged; pipeline demonstration only."
   trace: off
