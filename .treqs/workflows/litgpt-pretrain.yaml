@@ -108,18 +108,6 @@ setup:
     print("roar module:", roar.__file__)
     PY
 
-    # litgpt deps. Deliberately NOT `.[extra]`:
-    #  - huggingface-hub<1.0 — litgpt/scripts/download.py:77 reads
-    #    huggingface_hub.constants.HF_HUB_ENABLE_HF_TRANSFER, removed in hub 1.0,
-    #    but litgpt's own pin (>=0.30,<1.4) admits 1.x -> `litgpt download` dies
-    #    with AttributeError. Pinned <1.0 until upstream guards the attribute.
-    #  - torch/torchvision pinned to the host stack: litgpt pins litdata==0.2.59,
-    #    whose UNBOUNDED `torchvision` dep resolves to a torchvision that hard-pins
-    #    torch==2.13.0, silently replacing the image's torch 2.7.0 (+~4 GB nvidia-*).
-    #  - torchmetrics is imported unconditionally by litgpt/pretrain.py but lives in
-    #    the OPTIONAL [extra] group.
-    # `-e .` then uninstall: installs litgpt's own deps without leaving an editable
-    # self-dist (trap 1: never captured in a freeze; blinds the tracer to the repo).
     python -m pip install --quiet -e . 'huggingface-hub>=0.30,<1.0' 'litdata==0.2.59' 'torchmetrics>=1.3.1' 'torch==2.7.0' 'torchvision==0.22.0'
     python -m pip uninstall -y -q litgpt
     # `pip install -e .` leaves litgpt.egg-info/ behind, and importlib.metadata reads
